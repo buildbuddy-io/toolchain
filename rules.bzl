@@ -4,6 +4,7 @@ load("@rules_cc//cc:defs.bzl", _cc_toolchain = "cc_toolchain")
 LLVM_VERSION = "8.0.0"
 LLVM_DOWNLOAD_URL = "https://releases.llvm.org/8.0.0/clang+llvm-8.0.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz"
 LLVM_SHA256 = "87b88d620284d1f0573923e6f7cc89edccf11d19ebaec1cfb83b4f09ac5db09c"
+LLVM_STRIP_PREFIX = "clang+llvm-8.0.0-x86_64-linux-gnu-ubuntu-16.04"
 
 def _buildbuddy_toolchain_impl(rctx):
     repo_path = str(rctx.path(""))
@@ -51,7 +52,7 @@ def _buildbuddy_toolchain_impl(rctx):
     rctx.symlink("/usr/bin/ld.gold", "bin/ld.gold")
 
     # Repository implementation functions can be restarted, keep expensive ops at the end.
-    rctx.download_and_extract([LLVM_DOWNLOAD_URL], sha256 = LLVM_SHA256, stripPrefix = "")
+    rctx.download_and_extract([LLVM_DOWNLOAD_URL], sha256 = LLVM_SHA256, stripPrefix = LLVM_STRIP_PREFIX)
 
 def buildbuddy_cc_toolchain(name):
     native.filegroup(name = name + "-all-files", srcs = [":all_components"])
