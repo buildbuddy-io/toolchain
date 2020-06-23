@@ -26,9 +26,7 @@ cc_toolchain_suite(
     name = "toolchain",
     toolchains = {
         "k8|clang": ":cc-clang-linux",
-        "darwin|clang": ":cc-clang-linux",
         "k8": ":cc-clang-linux",
-        "darwin": ":cc-clang-linux",
     },
 )
 
