@@ -24,11 +24,19 @@ def _buildbuddy_toolchain_impl(rctx):
         "%{makevars_ld_flags}": "-fuse-ld=lld",
         "%{k8_additional_cxx_builtin_include_directories}": "",
         "%{darwin_additional_cxx_builtin_include_directories}": "",
+        "%{default_cc_toolchain_suite}": "llvm_cc_toolchain_suite" if rctx.attr.llvm else "ubuntu1604_cc_toolchain_suite",
+        "%{default_cc_toolchain}": "llvm_cc_toolchain" if rctx.attr.llvm else "ubuntu1604_cc_toolchain",
+        "%{default_docker_image}": rctx.attr.docker_image,
     }
 
     rctx.template(
         "cc_toolchain_config.bzl",
         Label("//templates:cc_toolchain_config.bzl.tpl"),
+        substitutions,
+    )
+    rctx.template(
+        "llvm_cc_toolchain_config.bzl",
+        Label("//templates:llvm_cc_toolchain_config.bzl.tpl"),
         substitutions,
     )
     rctx.template(
@@ -52,7 +60,8 @@ def _buildbuddy_toolchain_impl(rctx):
     rctx.symlink("/usr/bin/ld.gold", "bin/ld.gold")
 
     # Repository implementation functions can be restarted, keep expensive ops at the end.
-    rctx.download_and_extract([LLVM_DOWNLOAD_URL], sha256 = LLVM_SHA256, stripPrefix = LLVM_STRIP_PREFIX)
+    if (rctx.attr.llvm):
+        rctx.download_and_extract([LLVM_DOWNLOAD_URL], sha256 = LLVM_SHA256, stripPrefix = LLVM_STRIP_PREFIX)
 
 def buildbuddy_cc_toolchain(name):
     native.filegroup(name = name + "-all-files", srcs = [":all_components"])
@@ -71,16 +80,19 @@ def buildbuddy_cc_toolchain(name):
         objcopy_files = ":objcopy",
         strip_files = ":empty",
         supports_param_files = 1,
-        toolchain_config = "local_linux",
+        toolchain_config = "llvm_cc_toolchain_config",
     )
 
 buildbuddy_toolchain = repository_rule(
-    attrs = {},
+    attrs = {
+        "llvm": attr.bool(),
+        "docker_image": attr.string(),
+    },
     local = False,
     implementation = _buildbuddy_toolchain_impl,
 )
 
-def register_buildbuddy_toolchain(name):
+def register_buildbuddy_toolchain(name, llvm = True, docker_image = "none"):
     if not native.existing_rule("rules_cc"):
         http_archive(
             name = "rules_cc",
@@ -89,4 +101,4 @@ def register_buildbuddy_toolchain(name):
             urls = ["https://github.com/bazelbuild/rules_cc/archive/726dd8157557f1456b3656e26ab21a1646653405.tar.gz"],
         )
 
-    buildbuddy_toolchain(name = name)
+    buildbuddy_toolchain(name = name, llvm = llvm)
