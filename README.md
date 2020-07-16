@@ -19,12 +19,19 @@ register_buildbuddy_toolchain(name = "buildbuddy_toolchain")
 
 Now you can use the toolchain in your BuildBuddy RBE builds. For example:
 ```
-bazel build server --remote_executor=cloud.buildbuddy.dev --crosstool_top=@buildbuddy_toolchain//:toolchain
+bazel build server --remote_executor=cloud.buildbuddy.io --crosstool_top=@buildbuddy_toolchain//:toolchain
+```
+
+If you need Java 8 support, you just need to add a few more flags:
+```
+--javabase=@buildbuddy_toolchain//:javabase_jdk8
+--host_javabase=@buildbuddy_toolchain//:javabase_jdk8
+--java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
 ```
 
 ## Coming soon
 
-Java support, Ubuntu 18.04, and Darwin (Mac) support are on our roadmap.
+Ubuntu 18.04, and Darwin (Mac) support are on our roadmap.
 
 ## Additional resources
 
