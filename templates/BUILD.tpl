@@ -36,7 +36,7 @@ toolchain(
     exec_compatible_with = [
         "@bazel_tools//platforms:x86_64",
         "@bazel_tools//platforms:linux",
-        "@bazel_tools//tools/cpp:clang",
+#        "@bazel_tools//tools/cpp:clang",
     ],
     target_compatible_with = [
         "@bazel_tools//platforms:linux",
