@@ -140,8 +140,6 @@ cc_toolchain_suite(
     },
 )
 
-load(":llvm_cc_toolchain_config.bzl", "llvm_cc_toolchain_config")
-
 toolchain(
     name = "llvm-cc-toolchain-linux",
     exec_compatible_with = [
