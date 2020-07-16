@@ -52,7 +52,8 @@ def _buildbuddy_toolchain_impl(rctx):
     rctx.symlink("/usr/bin/ld.gold", "bin/ld.gold")
 
     # Repository implementation functions can be restarted, keep expensive ops at the end.
-    rctx.download_and_extract([LLVM_DOWNLOAD_URL], sha256 = LLVM_SHA256, stripPrefix = LLVM_STRIP_PREFIX)
+    if (rctx.attr.llvm):
+        rctx.download_and_extract([LLVM_DOWNLOAD_URL], sha256 = LLVM_SHA256, stripPrefix = LLVM_STRIP_PREFIX)
 
 def buildbuddy_cc_toolchain(name):
     native.filegroup(name = name + "-all-files", srcs = [":all_components"])
@@ -75,12 +76,12 @@ def buildbuddy_cc_toolchain(name):
     )
 
 buildbuddy_toolchain = repository_rule(
-    attrs = {},
+    attrs = {llvm: llvm},
     local = False,
     implementation = _buildbuddy_toolchain_impl,
 )
 
-def register_buildbuddy_toolchain(name):
+def register_buildbuddy_toolchain(name, llvm = False):
     if not native.existing_rule("rules_cc"):
         http_archive(
             name = "rules_cc",
@@ -89,4 +90,4 @@ def register_buildbuddy_toolchain(name):
             urls = ["https://github.com/bazelbuild/rules_cc/archive/726dd8157557f1456b3656e26ab21a1646653405.tar.gz"],
         )
 
-    buildbuddy_toolchain(name = name)
+    buildbuddy_toolchain(name = name, llvm = llvm)
