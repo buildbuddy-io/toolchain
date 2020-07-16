@@ -292,3 +292,8 @@ filegroup(
     name = "empty",
     srcs = [],
 )
+
+filegroup(
+    name = "compiler_deps",
+    srcs = glob(["extra_tools/**"], allow_empty = True) + [":builtin_include_directory_paths"],
+)
