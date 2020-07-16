@@ -64,8 +64,8 @@ alias(
 cc_toolchain_suite(
     name = "ubuntu1604_cc_toolchain_suite",
     toolchains = {
-        "k8|compiler": ":ubuntu1604_cc_toolchain",
-        "k8": ":ubuntu1604_cc_toolchain",
+        "k8|compiler": ":ubuntu1604_local_cc_toolchain",
+        "k8": ":ubuntu1604_local_cc_toolchain",
     },
 )
 
