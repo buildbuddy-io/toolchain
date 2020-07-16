@@ -77,7 +77,7 @@ def buildbuddy_cc_toolchain(name):
 
 buildbuddy_toolchain = repository_rule(
     attrs = {},
-    local = False,
+    llvm = False,
     implementation = _buildbuddy_toolchain_impl,
 )
 
