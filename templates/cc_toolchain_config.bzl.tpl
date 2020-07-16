@@ -14,1061 +14,613 @@
 
 """A Starlark cc_toolchain configuration rule"""
 
+load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 load(
     "@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl",
-    "action_config",
     "feature",
+    "feature_set",
     "flag_group",
     "flag_set",
-    "tool",
     "tool_path",
+    "variable_with_value",
     "with_feature_set",
 )
-load(
-    "@bazel_tools//tools/build_defs/cc:action_names.bzl",
-    _ASSEMBLE_ACTION_NAME = "ASSEMBLE_ACTION_NAME",
-    _CLIF_MATCH_ACTION_NAME = "CLIF_MATCH_ACTION_NAME",
-    _CPP_COMPILE_ACTION_NAME = "CPP_COMPILE_ACTION_NAME",
-    _CPP_HEADER_PARSING_ACTION_NAME = "CPP_HEADER_PARSING_ACTION_NAME",
-    _CPP_LINK_DYNAMIC_LIBRARY_ACTION_NAME = "CPP_LINK_DYNAMIC_LIBRARY_ACTION_NAME",
-    _CPP_LINK_EXECUTABLE_ACTION_NAME = "CPP_LINK_EXECUTABLE_ACTION_NAME",
-    _CPP_LINK_NODEPS_DYNAMIC_LIBRARY_ACTION_NAME = "CPP_LINK_NODEPS_DYNAMIC_LIBRARY_ACTION_NAME",
-    _CPP_MODULE_CODEGEN_ACTION_NAME = "CPP_MODULE_CODEGEN_ACTION_NAME",
-    _CPP_MODULE_COMPILE_ACTION_NAME = "CPP_MODULE_COMPILE_ACTION_NAME",
-    _C_COMPILE_ACTION_NAME = "C_COMPILE_ACTION_NAME",
-    _LINKSTAMP_COMPILE_ACTION_NAME = "LINKSTAMP_COMPILE_ACTION_NAME",
-    _LTO_BACKEND_ACTION_NAME = "LTO_BACKEND_ACTION_NAME",
-    _PREPROCESS_ASSEMBLE_ACTION_NAME = "PREPROCESS_ASSEMBLE_ACTION_NAME",
-)
+
+def layering_check_features(compiler):
+    if compiler != "clang":
+        return []
+    return [
+        feature(
+            name = "use_module_maps",
+            requires = [feature_set(features = ["module_maps"])],
+            flag_sets = [
+                flag_set(
+                    actions = [
+                        ACTION_NAMES.c_compile,
+                        ACTION_NAMES.cpp_compile,
+                        ACTION_NAMES.cpp_header_parsing,
+                        ACTION_NAMES.cpp_module_compile,
+                    ],
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                "-fmodule-name=%{module_name}",
+                                "-fmodule-map-file=%{module_map_file}",
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+
+        # Tell blaze we support module maps in general, so they will be generated
+        # for all c/c++ rules.
+        # Note: not all C++ rules support module maps; thus, do not imply this
+        # feature from other features - instead, require it.
+        feature(name = "module_maps", enabled = True),
+        feature(
+            name = "layering_check",
+            implies = ["use_module_maps"],
+            flag_sets = [
+                flag_set(
+                    actions = [
+                        ACTION_NAMES.c_compile,
+                        ACTION_NAMES.cpp_compile,
+                        ACTION_NAMES.cpp_header_parsing,
+                        ACTION_NAMES.cpp_module_compile,
+                    ],
+                    flag_groups = [
+                        flag_group(flags = [
+                            "-fmodules-strict-decluse",
+                            "-Wprivate-header",
+                        ]),
+                        flag_group(
+                            iterate_over = "dependent_module_map_files",
+                            flags = [
+                                "-fmodule-map-file=%{dependent_module_map_files}",
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    ]
 
 all_compile_actions = [
-    _C_COMPILE_ACTION_NAME,
-    _CPP_COMPILE_ACTION_NAME,
-    _LINKSTAMP_COMPILE_ACTION_NAME,
-    _ASSEMBLE_ACTION_NAME,
-    _PREPROCESS_ASSEMBLE_ACTION_NAME,
-    _CPP_HEADER_PARSING_ACTION_NAME,
-    _CPP_MODULE_COMPILE_ACTION_NAME,
-    _CPP_MODULE_CODEGEN_ACTION_NAME,
-    _CLIF_MATCH_ACTION_NAME,
-    _LTO_BACKEND_ACTION_NAME,
+    ACTION_NAMES.c_compile,
+    ACTION_NAMES.cpp_compile,
+    ACTION_NAMES.linkstamp_compile,
+    ACTION_NAMES.assemble,
+    ACTION_NAMES.preprocess_assemble,
+    ACTION_NAMES.cpp_header_parsing,
+    ACTION_NAMES.cpp_module_compile,
+    ACTION_NAMES.cpp_module_codegen,
+    ACTION_NAMES.clif_match,
+    ACTION_NAMES.lto_backend,
 ]
 
 all_cpp_compile_actions = [
-    _CPP_COMPILE_ACTION_NAME,
-    _LINKSTAMP_COMPILE_ACTION_NAME,
-    _CPP_HEADER_PARSING_ACTION_NAME,
-    _CPP_MODULE_COMPILE_ACTION_NAME,
-    _CPP_MODULE_CODEGEN_ACTION_NAME,
-    _CLIF_MATCH_ACTION_NAME,
+    ACTION_NAMES.cpp_compile,
+    ACTION_NAMES.linkstamp_compile,
+    ACTION_NAMES.cpp_header_parsing,
+    ACTION_NAMES.cpp_module_compile,
+    ACTION_NAMES.cpp_module_codegen,
+    ACTION_NAMES.clif_match,
 ]
 
 preprocessor_compile_actions = [
-    _C_COMPILE_ACTION_NAME,
-    _CPP_COMPILE_ACTION_NAME,
-    _LINKSTAMP_COMPILE_ACTION_NAME,
-    _PREPROCESS_ASSEMBLE_ACTION_NAME,
-    _CPP_HEADER_PARSING_ACTION_NAME,
-    _CPP_MODULE_COMPILE_ACTION_NAME,
-    _CLIF_MATCH_ACTION_NAME,
+    ACTION_NAMES.c_compile,
+    ACTION_NAMES.cpp_compile,
+    ACTION_NAMES.linkstamp_compile,
+    ACTION_NAMES.preprocess_assemble,
+    ACTION_NAMES.cpp_header_parsing,
+    ACTION_NAMES.cpp_module_compile,
+    ACTION_NAMES.clif_match,
 ]
 
 codegen_compile_actions = [
-    _C_COMPILE_ACTION_NAME,
-    _CPP_COMPILE_ACTION_NAME,
-    _LINKSTAMP_COMPILE_ACTION_NAME,
-    _ASSEMBLE_ACTION_NAME,
-    _PREPROCESS_ASSEMBLE_ACTION_NAME,
-    _CPP_MODULE_CODEGEN_ACTION_NAME,
-    _LTO_BACKEND_ACTION_NAME,
+    ACTION_NAMES.c_compile,
+    ACTION_NAMES.cpp_compile,
+    ACTION_NAMES.linkstamp_compile,
+    ACTION_NAMES.assemble,
+    ACTION_NAMES.preprocess_assemble,
+    ACTION_NAMES.cpp_module_codegen,
+    ACTION_NAMES.lto_backend,
 ]
 
 all_link_actions = [
-    _CPP_LINK_EXECUTABLE_ACTION_NAME,
-    _CPP_LINK_DYNAMIC_LIBRARY_ACTION_NAME,
-    _CPP_LINK_NODEPS_DYNAMIC_LIBRARY_ACTION_NAME,
+    ACTION_NAMES.cpp_link_executable,
+    ACTION_NAMES.cpp_link_dynamic_library,
+    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+]
+
+lto_index_actions = [
+    ACTION_NAMES.lto_index_for_executable,
+    ACTION_NAMES.lto_index_for_dynamic_library,
+    ACTION_NAMES.lto_index_for_nodeps_dynamic_library,
 ]
 
 def _impl(ctx):
-    if ctx.attr.disable_static_cc_toolchains:
-        fail("@bazel_tools//tools/cpp:default-toolchain, as well as the cc_toolchains it points " +
-             "to have been removed. See https://github.com/bazelbuild/bazel/issues/8546.")
+    tool_paths = [
+        tool_path(name = name, path = path)
+        for name, path in ctx.attr.tool_paths.items()
+    ]
+    action_configs = []
 
-    if (ctx.attr.cpu == "darwin"):
-        toolchain_identifier = "local_darwin"
-    elif (ctx.attr.cpu == "freebsd"):
-        toolchain_identifier = "local_freebsd"
-    elif (ctx.attr.cpu == "openbsd"):
-        toolchain_identifier = "local_openbsd"
-    elif (ctx.attr.cpu == "local"):
-        toolchain_identifier = "local_linux"
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_clang"):
-        toolchain_identifier = "local_windows_clang"
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_mingw"):
-        toolchain_identifier = "local_windows_mingw"
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64"):
-        toolchain_identifier = "local_windows_msys64"
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64_mingw64"):
-        toolchain_identifier = "local_windows_msys64_mingw64"
-    elif (ctx.attr.cpu == "armeabi-v7a"):
-        toolchain_identifier = "stub_armeabi-v7a"
-    elif (ctx.attr.cpu == "x64_windows_msvc"):
-        toolchain_identifier = "vc_14_0_x64"
-    else:
-        fail("Unreachable")
-
-    if (ctx.attr.cpu == "armeabi-v7a"):
-        host_system_name = "armeabi-v7a"
-    elif (ctx.attr.cpu == "darwin" or
-          ctx.attr.cpu == "freebsd" or
-          ctx.attr.cpu == "openbsd" or
-          ctx.attr.cpu == "local" or
-          ctx.attr.cpu == "x64_windows" or
-          ctx.attr.cpu == "x64_windows_msvc"):
-        host_system_name = "local"
-    else:
-        fail("Unreachable")
-
-    if (ctx.attr.cpu == "armeabi-v7a"):
-        target_system_name = "armeabi-v7a"
-    elif (ctx.attr.cpu == "darwin" or
-          ctx.attr.cpu == "freebsd" or
-          ctx.attr.cpu == "openbsd" or
-          ctx.attr.cpu == "local" or
-          ctx.attr.cpu == "x64_windows" or
-          ctx.attr.cpu == "x64_windows_msvc"):
-        target_system_name = "local"
-    else:
-        fail("Unreachable")
-
-    if (ctx.attr.cpu == "armeabi-v7a"):
-        target_cpu = "armeabi-v7a"
-    elif (ctx.attr.cpu == "darwin"):
-        target_cpu = "darwin"
-    elif (ctx.attr.cpu == "freebsd"):
-        target_cpu = "freebsd"
-    elif (ctx.attr.cpu == "openbsd"):
-        target_cpu = "openbsd"
-    elif (ctx.attr.cpu == "local"):
-        target_cpu = "local"
-    elif (ctx.attr.cpu == "x64_windows"):
-        target_cpu = "x64_windows"
-    elif (ctx.attr.cpu == "x64_windows_msvc"):
-        target_cpu = "x64_windows_msvc"
-    else:
-        fail("Unreachable")
-
-    if (ctx.attr.cpu == "armeabi-v7a"):
-        target_libc = "armeabi-v7a"
-    elif (ctx.attr.cpu == "freebsd" or
-          ctx.attr.cpu == "openbsd" or
-          ctx.attr.cpu == "local" or
-          ctx.attr.cpu == "x64_windows"):
-        target_libc = "local"
-    elif (ctx.attr.cpu == "darwin"):
-        target_libc = "macosx"
-    elif (ctx.attr.cpu == "x64_windows_msvc"):
-        target_libc = "msvcrt140"
-    else:
-        fail("Unreachable")
-
-    if (ctx.attr.cpu == "x64_windows_msvc"):
-        compiler = "cl"
-    elif (ctx.attr.cpu == "armeabi-v7a" or
-          ctx.attr.cpu == "darwin" or
-          ctx.attr.cpu == "freebsd" or
-          ctx.attr.cpu == "openbsd" or
-          ctx.attr.cpu == "local"):
-        compiler = "compiler"
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_clang"):
-        compiler = "windows_clang"
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_mingw"):
-        compiler = "windows_mingw"
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64"):
-        compiler = "windows_msys64"
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64_mingw64"):
-        compiler = "windows_msys64_mingw64"
-    else:
-        fail("Unreachable")
-
-    if (ctx.attr.cpu == "armeabi-v7a"):
-        abi_version = "armeabi-v7a"
-    elif (ctx.attr.cpu == "darwin" or
-          ctx.attr.cpu == "freebsd" or
-          ctx.attr.cpu == "openbsd" or
-          ctx.attr.cpu == "local" or
-          ctx.attr.cpu == "x64_windows" or
-          ctx.attr.cpu == "x64_windows_msvc"):
-        abi_version = "local"
-    else:
-        fail("Unreachable")
-
-    if (ctx.attr.cpu == "armeabi-v7a"):
-        abi_libc_version = "armeabi-v7a"
-    elif (ctx.attr.cpu == "darwin" or
-          ctx.attr.cpu == "freebsd" or
-          ctx.attr.cpu == "openbsd" or
-          ctx.attr.cpu == "local" or
-          ctx.attr.cpu == "x64_windows" or
-          ctx.attr.cpu == "x64_windows_msvc"):
-        abi_libc_version = "local"
-    else:
-        fail("Unreachable")
-
-    cc_target_os = None
-
-    builtin_sysroot = None
-
-    if (ctx.attr.cpu == "darwin" or
-        ctx.attr.cpu == "freebsd" or
-        ctx.attr.cpu == "openbsd" or
-        ctx.attr.cpu == "local"):
-        objcopy_embed_data_action = action_config(
-            action_name = "objcopy_embed_data",
-            enabled = True,
-            tools = [tool(path = "/usr/bin/objcopy")],
-        )
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_clang"):
-        objcopy_embed_data_action = action_config(
-            action_name = "objcopy_embed_data",
-            enabled = True,
-            tools = [tool(path = "C:/Program Files (x86)/LLVM/bin/objcopy")],
-        )
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_mingw"):
-        objcopy_embed_data_action = action_config(
-            action_name = "objcopy_embed_data",
-            enabled = True,
-            tools = [tool(path = "C:/mingw/bin/objcopy")],
-        )
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64_mingw64"):
-        objcopy_embed_data_action = action_config(
-            action_name = "objcopy_embed_data",
-            enabled = True,
-            tools = [tool(path = "C:/tools/msys64/mingw64/bin/objcopy")],
-        )
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64"):
-        objcopy_embed_data_action = action_config(
-            action_name = "objcopy_embed_data",
-            enabled = True,
-            tools = [tool(path = "C:/tools/msys64/usr/bin/objcopy")],
-        )
-
-    c_compile_action = action_config(
-        action_name = _C_COMPILE_ACTION_NAME,
-        implies = [
-            "compiler_input_flags",
-            "compiler_output_flags",
-            "default_compile_flags",
-            "user_compile_flags",
-            "sysroot",
-            "unfiltered_compile_flags",
-        ],
-        tools = [tool(path = "wrapper/bin/msvc_cl.bat")],
+    supports_pic_feature = feature(
+        name = "supports_pic",
+        enabled = True,
+    )
+    supports_start_end_lib_feature = feature(
+        name = "supports_start_end_lib",
+        enabled = True,
     )
 
-    cpp_compile_action = action_config(
-        action_name = _CPP_COMPILE_ACTION_NAME,
-        implies = [
-            "compiler_input_flags",
-            "compiler_output_flags",
-            "default_compile_flags",
-            "user_compile_flags",
-            "sysroot",
-            "unfiltered_compile_flags",
-        ],
-        tools = [tool(path = "wrapper/bin/msvc_cl.bat")],
-    )
-
-    if (ctx.attr.cpu == "armeabi-v7a"):
-        action_configs = []
-    elif (ctx.attr.cpu == "x64_windows_msvc"):
-        action_configs = [c_compile_action, cpp_compile_action]
-    elif (ctx.attr.cpu == "darwin" or
-          ctx.attr.cpu == "freebsd" or
-          ctx.attr.cpu == "openbsd" or
-          ctx.attr.cpu == "local" or
-          ctx.attr.cpu == "x64_windows"):
-        action_configs = [objcopy_embed_data_action]
-    else:
-        fail("Unreachable")
-
-    random_seed_feature = feature(name = "random_seed", enabled = True)
-
-    compiler_output_flags_feature = feature(
-        name = "compiler_output_flags",
-        flag_sets = [
-            flag_set(
-                actions = [_ASSEMBLE_ACTION_NAME],
-                flag_groups = [
-                    flag_group(
-                        flags = ["/Fo%{output_file}", "/Zi"],
-                        expand_if_available = "output_file",
-                        expand_if_not_available = "output_assembly_file",
-                    ),
-                ],
-            ),
-            flag_set(
-                actions = [
-                    _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                    _C_COMPILE_ACTION_NAME,
-                    _CPP_COMPILE_ACTION_NAME,
-                    _CPP_HEADER_PARSING_ACTION_NAME,
-                    _CPP_MODULE_COMPILE_ACTION_NAME,
-                    _CPP_MODULE_CODEGEN_ACTION_NAME,
-                ],
-                flag_groups = [
-                    flag_group(
-                        flags = ["/Fo%{output_file}"],
-                        expand_if_available = "output_file",
-                        expand_if_not_available = "output_assembly_file",
-                    ),
-                    flag_group(
-                        flags = ["/Fa%{output_file}"],
-                        expand_if_available = "output_file",
-                    ),
-                    flag_group(
-                        flags = ["/P", "/Fi%{output_file}"],
-                        expand_if_available = "output_file",
-                    ),
-                ],
-            ),
-        ],
-    )
-
-    if (ctx.attr.cpu == "local"):
-        default_link_flags_feature = feature(
-            name = "default_link_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = all_link_actions,
-                    flag_groups = [
-                        flag_group(
-                            flags = [
-                                "-lstdc++",
-                                "-Wl,-z,relro,-z,now",
-                                "-no-canonical-prefixes",
-                                "-pass-exit-codes",
-                            ],
-                        ),
-                    ],
-                ),
-                flag_set(
-                    actions = all_link_actions,
-                    flag_groups = [flag_group(flags = ["-Wl,--gc-sections"])],
-                    with_features = [with_feature_set(features = ["opt"])],
-                ),
-            ],
-        )
-    elif (ctx.attr.cpu == "freebsd" or
-          ctx.attr.cpu == "openbsd"):
-        default_link_flags_feature = feature(
-            name = "default_link_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = all_link_actions,
-                    flag_groups = [
-                        flag_group(
-                            flags = [
-                                "-lstdc++",
-                                "-Wl,-z,relro,-z,now",
-                                "-no-canonical-prefixes",
-                            ],
-                        ),
-                    ],
-                ),
-                flag_set(
-                    actions = all_link_actions,
-                    flag_groups = [flag_group(flags = ["-Wl,--gc-sections"])],
-                    with_features = [with_feature_set(features = ["opt"])],
-                ),
-            ],
-        )
-    elif (ctx.attr.cpu == "darwin"):
-        default_link_flags_feature = feature(
-            name = "default_link_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = all_link_actions,
-                    flag_groups = [
-                        flag_group(
-                            flags = [
-                                "-lstdc++",
-                                "-undefined",
-                                "dynamic_lookup",
-                                "-headerpad_max_install_names",
-                                "-no-canonical-prefixes",
-                            ],
-                        ),
-                    ],
-                ),
-            ],
-        )
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64"):
-        default_link_flags_feature = feature(
-            name = "default_link_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = all_link_actions,
-                    flag_groups = [flag_group(flags = ["-lstdc++"])],
-                ),
-            ],
-        )
-    elif (ctx.attr.cpu == "x64_windows_msvc"):
-        default_link_flags_feature = feature(
-            name = "default_link_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = all_link_actions,
-                    flag_groups = [flag_group(flags = ["-m64"])],
-                ),
-            ],
-        )
-
-    if (ctx.attr.cpu == "darwin" or
-        ctx.attr.cpu == "freebsd" or
-        ctx.attr.cpu == "openbsd"):
-        unfiltered_compile_flags_feature = feature(
-            name = "unfiltered_compile_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = [
-                                "-no-canonical-prefixes",
-                                "-Wno-builtin-macro-redefined",
-                                "-D__DATE__=\"redacted\"",
-                                "-D__TIMESTAMP__=\"redacted\"",
-                                "-D__TIME__=\"redacted\"",
-                            ],
-                        ),
-                    ],
-                ),
-            ],
-        )
-    elif (ctx.attr.cpu == "local"):
-        unfiltered_compile_flags_feature = feature(
-            name = "unfiltered_compile_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = [
-                                "-no-canonical-prefixes",
-                                "-fno-canonical-system-headers",
-                                "-Wno-builtin-macro-redefined",
-                                "-D__DATE__=\"redacted\"",
-                                "-D__TIMESTAMP__=\"redacted\"",
-                                "-D__TIME__=\"redacted\"",
-                            ],
-                        ),
-                    ],
-                ),
-            ],
-        )
-    elif (ctx.attr.cpu == "x64_windows_msvc"):
-        unfiltered_compile_flags_feature = feature(
-            name = "unfiltered_compile_flags",
-            flag_sets = [
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = ["%{unfiltered_compile_flags}"],
-                            iterate_over = "unfiltered_compile_flags",
-                            expand_if_available = "unfiltered_compile_flags",
-                        ),
-                    ],
-                ),
-            ],
-        )
-
-    supports_pic_feature = feature(name = "supports_pic", enabled = True)
-
-    if (ctx.attr.cpu == "darwin"):
-        default_compile_flags_feature = feature(
-            name = "default_compile_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = [
-                                "-D_FORTIFY_SOURCE=1",
-                                "-fstack-protector",
-                                "-fcolor-diagnostics",
-                                "-Wall",
-                                "-Wthread-safety",
-                                "-Wself-assign",
-                                "-fno-omit-frame-pointer",
-                            ],
-                        ),
-                    ],
-                ),
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [flag_group(flags = ["-g"])],
-                    with_features = [with_feature_set(features = ["dbg"])],
-                ),
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = [
-                                "-g0",
-                                "-O2",
-                                "-DNDEBUG",
-                                "-ffunction-sections",
-                                "-fdata-sections",
-                            ],
-                        ),
-                    ],
-                    with_features = [with_feature_set(features = ["opt"])],
-                ),
-                flag_set(
-                    actions = [
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [flag_group(flags = ["-std=c++0x"])],
-                ),
-            ],
-        )
-    elif (ctx.attr.cpu == "local"):
-        default_compile_flags_feature = feature(
-            name = "default_compile_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = [
-                                "-U_FORTIFY_SOURCE",
-                                "-D_FORTIFY_SOURCE=1",
-                                "-fstack-protector",
-                                "-Wall",
-                                "-Wunused-but-set-parameter",
-                                "-Wno-free-nonheap-object",
-                                "-fno-omit-frame-pointer",
-                            ],
-                        ),
-                    ],
-                ),
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [flag_group(flags = ["-g"])],
-                    with_features = [with_feature_set(features = ["dbg"])],
-                ),
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = [
-                                "-g0",
-                                "-O2",
-                                "-DNDEBUG",
-                                "-ffunction-sections",
-                                "-fdata-sections",
-                            ],
-                        ),
-                    ],
-                    with_features = [with_feature_set(features = ["opt"])],
-                ),
-                flag_set(
-                    actions = [
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [flag_group(flags = ["-std=c++0x"])],
-                ),
-            ],
-        )
-    elif (ctx.attr.cpu == "freebsd" or
-          ctx.attr.cpu == "openbsd"):
-        default_compile_flags_feature = feature(
-            name = "default_compile_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = [
-                                "-U_FORTIFY_SOURCE",
-                                "-D_FORTIFY_SOURCE=1",
-                                "-fstack-protector",
-                                "-Wall",
-                                "-fno-omit-frame-pointer",
-                            ],
-                        ),
-                    ],
-                ),
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [flag_group(flags = ["-g"])],
-                    with_features = [with_feature_set(features = ["dbg"])],
-                ),
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = [
-                                "-g0",
-                                "-O2",
-                                "-DNDEBUG",
-                                "-ffunction-sections",
-                                "-fdata-sections",
-                            ],
-                        ),
-                    ],
-                    with_features = [with_feature_set(features = ["opt"])],
-                ),
-                flag_set(
-                    actions = [
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [flag_group(flags = ["-std=c++0x"])],
-                ),
-            ],
-        )
-    elif (ctx.attr.cpu == "x64_windows_msvc"):
-        default_compile_flags_feature = feature(
-            name = "default_compile_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = [
-                                "-m64",
-                                "/D__inline__=__inline",
-                                "/DCOMPILER_MSVC",
-                                "/DNOGDI",
-                                "/DNOMINMAX",
-                                "/DPRAGMA_SUPPORTED",
-                                "/D_WIN32_WINNT=0x0601",
-                                "/D_CRT_SECURE_NO_DEPRECATE",
-                                "/D_CRT_SECURE_NO_WARNINGS",
-                                "/D_SILENCE_STDEXT_HASH_DEPRECATION_WARNINGS",
-                                "/D_USE_MATH_DEFINES",
-                                "/nologo",
-                                "/bigobj",
-                                "/Zm500",
-                                "/J",
-                                "/Gy",
-                                "/GF",
-                                "/W3",
-                                "/EHsc",
-                                "/wd4351",
-                                "/wd4291",
-                                "/wd4250",
-                                "/wd4996",
-                            ],
-                        ),
-                    ],
-                ),
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = ["/DDEBUG=1", "-g", "/Od", "-Xcompilation-mode=dbg"],
-                        ),
-                    ],
-                    with_features = [with_feature_set(features = ["dbg"])],
-                ),
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = ["/DNDEBUG", "/Od", "-Xcompilation-mode=fastbuild"],
-                        ),
-                    ],
-                    with_features = [with_feature_set(features = ["fastbuild"])],
-                ),
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = ["/DNDEBUG", "/O2", "-Xcompilation-mode=opt"],
-                        ),
-                    ],
-                    with_features = [with_feature_set(features = ["opt"])],
-                ),
-            ],
-        )
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_clang" or
-          ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_mingw" or
-          ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64_mingw64"):
-        default_compile_flags_feature = feature(
-            name = "default_compile_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = [
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [flag_group(flags = ["-std=c++0x"])],
-                ),
-            ],
-        )
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64"):
-        default_compile_flags_feature = feature(
-            name = "default_compile_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = [
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [flag_group(flags = ["-std=gnu++0x"])],
-                ),
-            ],
-        )
-
-    opt_feature = feature(name = "opt")
-
-    supports_dynamic_linker_feature = feature(name = "supports_dynamic_linker", enabled = True)
-
-    objcopy_embed_flags_feature = feature(
-        name = "objcopy_embed_flags",
+    default_compile_flags_feature = feature(
+        name = "default_compile_flags",
         enabled = True,
         flag_sets = [
             flag_set(
-                actions = ["objcopy_embed_data"],
-                flag_groups = [flag_group(flags = ["-I", "binary"])],
+                actions = all_compile_actions,
+                flag_groups = ([
+                    flag_group(
+                        flags = ctx.attr.compile_flags,
+                    ),
+                ] if ctx.attr.compile_flags else []),
+            ),
+            flag_set(
+                actions = all_compile_actions,
+                flag_groups = ([
+                    flag_group(
+                        flags = ctx.attr.dbg_compile_flags,
+                    ),
+                ] if ctx.attr.dbg_compile_flags else []),
+                with_features = [with_feature_set(features = ["dbg"])],
+            ),
+            flag_set(
+                actions = all_compile_actions,
+                flag_groups = ([
+                    flag_group(
+                        flags = ctx.attr.opt_compile_flags,
+                    ),
+                ] if ctx.attr.opt_compile_flags else []),
+                with_features = [with_feature_set(features = ["opt"])],
+            ),
+            flag_set(
+                actions = all_cpp_compile_actions + [ACTION_NAMES.lto_backend],
+                flag_groups = ([
+                    flag_group(
+                        flags = ctx.attr.cxx_flags,
+                    ),
+                ] if ctx.attr.cxx_flags else []),
+            ),
+        ],
+    )
+
+    default_link_flags_feature = feature(
+        name = "default_link_flags",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = ([
+                    flag_group(
+                        flags = ctx.attr.link_flags,
+                    ),
+                ] if ctx.attr.link_flags else []),
+            ),
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = ([
+                    flag_group(
+                        flags = ctx.attr.opt_link_flags,
+                    ),
+                ] if ctx.attr.opt_link_flags else []),
+                with_features = [with_feature_set(features = ["opt"])],
             ),
         ],
     )
 
     dbg_feature = feature(name = "dbg")
 
-    if (ctx.attr.cpu == "darwin" or
-        ctx.attr.cpu == "freebsd" or
-        ctx.attr.cpu == "openbsd" or
-        ctx.attr.cpu == "local"):
-        user_compile_flags_feature = feature(
-            name = "user_compile_flags",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = ["%{user_compile_flags}"],
-                            iterate_over = "user_compile_flags",
-                            expand_if_available = "user_compile_flags",
-                        ),
-                    ],
-                ),
-            ],
-        )
-    elif (ctx.attr.cpu == "x64_windows_msvc"):
-        user_compile_flags_feature = feature(
-            name = "user_compile_flags",
-            flag_sets = [
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = ["%{user_compile_flags}"],
-                            iterate_over = "user_compile_flags",
-                            expand_if_available = "user_compile_flags",
-                        ),
-                    ],
-                ),
-            ],
-        )
+    opt_feature = feature(name = "opt")
 
-    if (ctx.attr.cpu == "darwin" or
-        ctx.attr.cpu == "freebsd" or
-        ctx.attr.cpu == "openbsd" or
-        ctx.attr.cpu == "local"):
-        sysroot_feature = feature(
-            name = "sysroot",
-            enabled = True,
-            flag_sets = [
-                flag_set(
-                    actions = [
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _LINKSTAMP_COMPILE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _LTO_BACKEND_ACTION_NAME,
-                        _CLIF_MATCH_ACTION_NAME,
-                        _CPP_LINK_EXECUTABLE_ACTION_NAME,
-                        _CPP_LINK_DYNAMIC_LIBRARY_ACTION_NAME,
-                        _CPP_LINK_NODEPS_DYNAMIC_LIBRARY_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = ["--sysroot=%{sysroot}"],
-                            expand_if_available = "sysroot",
-                        ),
-                    ],
-                ),
-            ],
-        )
-    elif (ctx.attr.cpu == "x64_windows_msvc"):
-        sysroot_feature = feature(
-            name = "sysroot",
-            flag_sets = [
-                flag_set(
-                    actions = [
-                        _ASSEMBLE_ACTION_NAME,
-                        _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                        _C_COMPILE_ACTION_NAME,
-                        _CPP_COMPILE_ACTION_NAME,
-                        _CPP_HEADER_PARSING_ACTION_NAME,
-                        _CPP_MODULE_COMPILE_ACTION_NAME,
-                        _CPP_MODULE_CODEGEN_ACTION_NAME,
-                        _CPP_LINK_EXECUTABLE_ACTION_NAME,
-                        _CPP_LINK_DYNAMIC_LIBRARY_ACTION_NAME,
-                        _CPP_LINK_NODEPS_DYNAMIC_LIBRARY_ACTION_NAME,
-                    ],
-                    flag_groups = [
-                        flag_group(
-                            flags = ["--sysroot=%{sysroot}"],
-                            iterate_over = "sysroot",
-                            expand_if_available = "sysroot",
-                        ),
-                    ],
-                ),
-            ],
-        )
+    sysroot_feature = feature(
+        name = "sysroot",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.preprocess_assemble,
+                    ACTION_NAMES.linkstamp_compile,
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.cpp_header_parsing,
+                    ACTION_NAMES.cpp_module_compile,
+                    ACTION_NAMES.cpp_module_codegen,
+                    ACTION_NAMES.lto_backend,
+                    ACTION_NAMES.clif_match,
+                ] + all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = ["--sysroot=%{sysroot}"],
+                        expand_if_available = "sysroot",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    fdo_optimize_feature = feature(
+        name = "fdo_optimize",
+        flag_sets = [
+            flag_set(
+                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-fprofile-use=%{fdo_profile_path}",
+                            "-fprofile-correction",
+                        ],
+                        expand_if_available = "fdo_profile_path",
+                    ),
+                ],
+            ),
+        ],
+        provides = ["profile"],
+    )
+
+    supports_dynamic_linker_feature = feature(name = "supports_dynamic_linker", enabled = True)
+
+    user_compile_flags_feature = feature(
+        name = "user_compile_flags",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = all_compile_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = ["%{user_compile_flags}"],
+                        iterate_over = "user_compile_flags",
+                        expand_if_available = "user_compile_flags",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    unfiltered_compile_flags_feature = feature(
+        name = "unfiltered_compile_flags",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = all_compile_actions,
+                flag_groups = ([
+                    flag_group(
+                        flags = ctx.attr.unfiltered_compile_flags,
+                    ),
+                ] if ctx.attr.unfiltered_compile_flags else []),
+            ),
+        ],
+    )
+
+    library_search_directories_feature = feature(
+        name = "library_search_directories",
+        flag_sets = [
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = ["-L%{library_search_directories}"],
+                        iterate_over = "library_search_directories",
+                        expand_if_available = "library_search_directories",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    static_libgcc_feature = feature(
+        name = "static_libgcc",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.cpp_link_executable,
+                    ACTION_NAMES.cpp_link_dynamic_library,
+                    ACTION_NAMES.lto_index_for_executable,
+                    ACTION_NAMES.lto_index_for_dynamic_library,
+                ],
+                flag_groups = [flag_group(flags = ["-static-libgcc"])],
+                with_features = [
+                    with_feature_set(features = ["static_link_cpp_runtimes"]),
+                ],
+            ),
+        ],
+    )
+
+    pic_feature = feature(
+        name = "pic",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.assemble,
+                    ACTION_NAMES.preprocess_assemble,
+                    ACTION_NAMES.linkstamp_compile,
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.cpp_module_codegen,
+                    ACTION_NAMES.cpp_module_compile,
+                ],
+                flag_groups = [
+                    flag_group(flags = ["-fPIC"], expand_if_available = "pic"),
+                ],
+            ),
+        ],
+    )
+
+    per_object_debug_info_feature = feature(
+        name = "per_object_debug_info",
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.assemble,
+                    ACTION_NAMES.preprocess_assemble,
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.cpp_module_codegen,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = ["-gsplit-dwarf"],
+                        expand_if_available = "per_object_debug_info_file",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    preprocessor_defines_feature = feature(
+        name = "preprocessor_defines",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.preprocess_assemble,
+                    ACTION_NAMES.linkstamp_compile,
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.cpp_header_parsing,
+                    ACTION_NAMES.cpp_module_compile,
+                    ACTION_NAMES.clif_match,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = ["-D%{preprocessor_defines}"],
+                        iterate_over = "preprocessor_defines",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    cs_fdo_optimize_feature = feature(
+        name = "cs_fdo_optimize",
+        flag_sets = [
+            flag_set(
+                actions = [ACTION_NAMES.lto_backend],
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-fprofile-use=%{fdo_profile_path}",
+                            "-Wno-profile-instr-unprofiled",
+                            "-Wno-profile-instr-out-of-date",
+                            "-fprofile-correction",
+                        ],
+                        expand_if_available = "fdo_profile_path",
+                    ),
+                ],
+            ),
+        ],
+        provides = ["csprofile"],
+    )
+
+    autofdo_feature = feature(
+        name = "autofdo",
+        flag_sets = [
+            flag_set(
+                actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile],
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-fauto-profile=%{fdo_profile_path}",
+                            "-fprofile-correction",
+                        ],
+                        expand_if_available = "fdo_profile_path",
+                    ),
+                ],
+            ),
+        ],
+        provides = ["profile"],
+    )
+
+    runtime_library_search_directories_feature = feature(
+        name = "runtime_library_search_directories",
+        flag_sets = [
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(
+                        iterate_over = "runtime_library_search_directories",
+                        flag_groups = [
+                            flag_group(
+                                flags = [
+                                    "-Wl,-rpath,$EXEC_ORIGIN/%{runtime_library_search_directories}",
+                                ],
+                                expand_if_true = "is_cc_test",
+                            ),
+                            flag_group(
+                                flags = [
+                                    "-Wl,-rpath,$ORIGIN/%{runtime_library_search_directories}",
+                                ],
+                                expand_if_false = "is_cc_test",
+                            ),
+                        ],
+                        expand_if_available =
+                            "runtime_library_search_directories",
+                    ),
+                ],
+                with_features = [
+                    with_feature_set(features = ["static_link_cpp_runtimes"]),
+                ],
+            ),
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(
+                        iterate_over = "runtime_library_search_directories",
+                        flag_groups = [
+                            flag_group(
+                                flags = [
+                                    "-Wl,-rpath,$ORIGIN/%{runtime_library_search_directories}",
+                                ],
+                            ),
+                        ],
+                        expand_if_available =
+                            "runtime_library_search_directories",
+                    ),
+                ],
+                with_features = [
+                    with_feature_set(
+                        not_features = ["static_link_cpp_runtimes"],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    fission_support_feature = feature(
+        name = "fission_support",
+        flag_sets = [
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = ["-Wl,--gdb-index"],
+                        expand_if_available = "is_using_fission",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    shared_flag_feature = feature(
+        name = "shared_flag",
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.cpp_link_dynamic_library,
+                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+                    ACTION_NAMES.lto_index_for_dynamic_library,
+                    ACTION_NAMES.lto_index_for_nodeps_dynamic_library,
+                ],
+                flag_groups = [flag_group(flags = ["-shared"])],
+            ),
+        ],
+    )
+
+    random_seed_feature = feature(
+        name = "random_seed",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.cpp_module_codegen,
+                    ACTION_NAMES.cpp_module_compile,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = ["-frandom-seed=%{output_file}"],
+                        expand_if_available = "output_file",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    includes_feature = feature(
+        name = "includes",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.preprocess_assemble,
+                    ACTION_NAMES.linkstamp_compile,
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.cpp_header_parsing,
+                    ACTION_NAMES.cpp_module_compile,
+                    ACTION_NAMES.clif_match,
+                    ACTION_NAMES.objc_compile,
+                    ACTION_NAMES.objcpp_compile,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = ["-include", "%{includes}"],
+                        iterate_over = "includes",
+                        expand_if_available = "includes",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    fdo_instrument_feature = feature(
+        name = "fdo_instrument",
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                ] + all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-fprofile-generate=%{fdo_instrument_path}",
+                            "-fno-data-sections",
+                        ],
+                        expand_if_available = "fdo_instrument_path",
+                    ),
+                ],
+            ),
+        ],
+        provides = ["profile"],
+    )
+
+    cs_fdo_instrument_feature = feature(
+        name = "cs_fdo_instrument",
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.lto_backend,
+                ] + all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-fcs-profile-generate=%{cs_fdo_instrument_path}",
+                        ],
+                        expand_if_available = "cs_fdo_instrument_path",
+                    ),
+                ],
+            ),
+        ],
+        provides = ["csprofile"],
+    )
 
     include_paths_feature = feature(
         name = "include_paths",
@@ -1076,24 +628,356 @@ def _impl(ctx):
         flag_sets = [
             flag_set(
                 actions = [
-                    _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                    _C_COMPILE_ACTION_NAME,
-                    _CPP_COMPILE_ACTION_NAME,
-                    _CPP_HEADER_PARSING_ACTION_NAME,
-                    _CPP_MODULE_COMPILE_ACTION_NAME,
+                    ACTION_NAMES.preprocess_assemble,
+                    ACTION_NAMES.linkstamp_compile,
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.cpp_header_parsing,
+                    ACTION_NAMES.cpp_module_compile,
+                    ACTION_NAMES.clif_match,
+                    ACTION_NAMES.objc_compile,
+                    ACTION_NAMES.objcpp_compile,
                 ],
                 flag_groups = [
                     flag_group(
-                        flags = ["/I%{quote_include_paths}"],
+                        flags = ["-iquote", "%{quote_include_paths}"],
                         iterate_over = "quote_include_paths",
                     ),
                     flag_group(
-                        flags = ["/I%{include_paths}"],
+                        flags = ["-I%{include_paths}"],
                         iterate_over = "include_paths",
                     ),
                     flag_group(
-                        flags = ["/I%{system_include_paths}"],
+                        flags = ["-isystem", "%{system_include_paths}"],
                         iterate_over = "system_include_paths",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    symbol_counts_feature = feature(
+        name = "symbol_counts",
+        flag_sets = [
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-Wl,--print-symbol-counts=%{symbol_counts_output}",
+                        ],
+                        expand_if_available = "symbol_counts_output",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    llvm_coverage_map_format_feature = feature(
+        name = "llvm_coverage_map_format",
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.preprocess_assemble,
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.cpp_module_compile,
+                    ACTION_NAMES.objc_compile,
+                    ACTION_NAMES.objcpp_compile,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-fprofile-instr-generate",
+                            "-fcoverage-mapping",
+                        ],
+                    ),
+                ],
+            ),
+            flag_set(
+                actions = all_link_actions + lto_index_actions + [
+                    "objc-executable",
+                    "objc++-executable",
+                ],
+                flag_groups = [
+                    flag_group(flags = ["-fprofile-instr-generate"]),
+                ],
+            ),
+        ],
+        requires = [feature_set(features = ["coverage"])],
+        provides = ["profile"],
+    )
+
+    strip_debug_symbols_feature = feature(
+        name = "strip_debug_symbols",
+        flag_sets = [
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = ["-Wl,-S"],
+                        expand_if_available = "strip_debug_symbols",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    build_interface_libraries_feature = feature(
+        name = "build_interface_libraries",
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.cpp_link_dynamic_library,
+                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+                    ACTION_NAMES.lto_index_for_dynamic_library,
+                    ACTION_NAMES.lto_index_for_nodeps_dynamic_library,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "%{generate_interface_library}",
+                            "%{interface_library_builder_path}",
+                            "%{interface_library_input_path}",
+                            "%{interface_library_output_path}",
+                        ],
+                        expand_if_available = "generate_interface_library",
+                    ),
+                ],
+                with_features = [
+                    with_feature_set(
+                        features = ["supports_interface_shared_libraries"],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    libraries_to_link_feature = feature(
+        name = "libraries_to_link",
+        flag_sets = [
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(
+                        iterate_over = "libraries_to_link",
+                        flag_groups = [
+                            flag_group(
+                                flags = ["-Wl,--start-lib"],
+                                expand_if_equal = variable_with_value(
+                                    name = "libraries_to_link.type",
+                                    value = "object_file_group",
+                                ),
+                            ),
+                            flag_group(
+                                flags = ["-Wl,-whole-archive"],
+                                expand_if_true =
+                                    "libraries_to_link.is_whole_archive",
+                            ),
+                            flag_group(
+                                flags = ["%{libraries_to_link.object_files}"],
+                                iterate_over = "libraries_to_link.object_files",
+                                expand_if_equal = variable_with_value(
+                                    name = "libraries_to_link.type",
+                                    value = "object_file_group",
+                                ),
+                            ),
+                            flag_group(
+                                flags = ["%{libraries_to_link.name}"],
+                                expand_if_equal = variable_with_value(
+                                    name = "libraries_to_link.type",
+                                    value = "object_file",
+                                ),
+                            ),
+                            flag_group(
+                                flags = ["%{libraries_to_link.name}"],
+                                expand_if_equal = variable_with_value(
+                                    name = "libraries_to_link.type",
+                                    value = "interface_library",
+                                ),
+                            ),
+                            flag_group(
+                                flags = ["%{libraries_to_link.name}"],
+                                expand_if_equal = variable_with_value(
+                                    name = "libraries_to_link.type",
+                                    value = "static_library",
+                                ),
+                            ),
+                            flag_group(
+                                flags = ["-l%{libraries_to_link.name}"],
+                                expand_if_equal = variable_with_value(
+                                    name = "libraries_to_link.type",
+                                    value = "dynamic_library",
+                                ),
+                            ),
+                            flag_group(
+                                flags = ["-l:%{libraries_to_link.name}"],
+                                expand_if_equal = variable_with_value(
+                                    name = "libraries_to_link.type",
+                                    value = "versioned_dynamic_library",
+                                ),
+                            ),
+                            flag_group(
+                                flags = ["-Wl,-no-whole-archive"],
+                                expand_if_true = "libraries_to_link.is_whole_archive",
+                            ),
+                            flag_group(
+                                flags = ["-Wl,--end-lib"],
+                                expand_if_equal = variable_with_value(
+                                    name = "libraries_to_link.type",
+                                    value = "object_file_group",
+                                ),
+                            ),
+                        ],
+                        expand_if_available = "libraries_to_link",
+                    ),
+                    flag_group(
+                        flags = ["-Wl,@%{thinlto_param_file}"],
+                        expand_if_true = "thinlto_param_file",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    user_link_flags_feature = feature(
+        name = "user_link_flags",
+        flag_sets = [
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = ["%{user_link_flags}"],
+                        iterate_over = "user_link_flags",
+                        expand_if_available = "user_link_flags",
+                    ),
+                ] + ([flag_group(flags = ctx.attr.link_libs)] if ctx.attr.link_libs else []),
+            ),
+        ],
+    )
+
+    fdo_prefetch_hints_feature = feature(
+        name = "fdo_prefetch_hints",
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.lto_backend,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-mllvm",
+                            "-prefetch-hints-file=%{fdo_prefetch_hints_path}",
+                        ],
+                        expand_if_available = "fdo_prefetch_hints_path",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    linkstamps_feature = feature(
+        name = "linkstamps",
+        flag_sets = [
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = ["%{linkstamp_paths}"],
+                        iterate_over = "linkstamp_paths",
+                        expand_if_available = "linkstamp_paths",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    gcc_coverage_map_format_feature = feature(
+        name = "gcc_coverage_map_format",
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.preprocess_assemble,
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.cpp_module_compile,
+                    ACTION_NAMES.objc_compile,
+                    ACTION_NAMES.objcpp_compile,
+                    "objc-executable",
+                    "objc++-executable",
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = ["-fprofile-arcs", "-ftest-coverage"],
+                        expand_if_available = "gcov_gcno_file",
+                    ),
+                ],
+            ),
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = [flag_group(flags = ["--coverage"])],
+            ),
+        ],
+        requires = [feature_set(features = ["coverage"])],
+        provides = ["profile"],
+    )
+
+    archiver_flags_feature = feature(
+        name = "archiver_flags",
+        flag_sets = [
+            flag_set(
+                actions = [ACTION_NAMES.cpp_link_static_library],
+                flag_groups = [
+                    flag_group(flags = ["rcsD"]),
+                    flag_group(
+                        flags = ["%{output_execpath}"],
+                        expand_if_available = "output_execpath",
+                    ),
+                ],
+            ),
+            flag_set(
+                actions = [ACTION_NAMES.cpp_link_static_library],
+                flag_groups = [
+                    flag_group(
+                        iterate_over = "libraries_to_link",
+                        flag_groups = [
+                            flag_group(
+                                flags = ["%{libraries_to_link.name}"],
+                                expand_if_equal = variable_with_value(
+                                    name = "libraries_to_link.type",
+                                    value = "object_file",
+                                ),
+                            ),
+                            flag_group(
+                                flags = ["%{libraries_to_link.object_files}"],
+                                iterate_over = "libraries_to_link.object_files",
+                                expand_if_equal = variable_with_value(
+                                    name = "libraries_to_link.type",
+                                    value = "object_file_group",
+                                ),
+                            ),
+                        ],
+                        expand_if_available = "libraries_to_link",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    force_pic_flags_feature = feature(
+        name = "force_pic_flags",
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.cpp_link_executable,
+                    ACTION_NAMES.lto_index_for_executable,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = ["-pie"],
+                        expand_if_available = "force_pic",
                     ),
                 ],
             ),
@@ -1106,16 +990,19 @@ def _impl(ctx):
         flag_sets = [
             flag_set(
                 actions = [
-                    _ASSEMBLE_ACTION_NAME,
-                    _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                    _C_COMPILE_ACTION_NAME,
-                    _CPP_COMPILE_ACTION_NAME,
-                    _CPP_MODULE_COMPILE_ACTION_NAME,
-                    _CPP_HEADER_PARSING_ACTION_NAME,
+                    ACTION_NAMES.assemble,
+                    ACTION_NAMES.preprocess_assemble,
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.cpp_module_compile,
+                    ACTION_NAMES.objc_compile,
+                    ACTION_NAMES.objcpp_compile,
+                    ACTION_NAMES.cpp_header_parsing,
+                    ACTION_NAMES.clif_match,
                 ],
                 flag_groups = [
                     flag_group(
-                        flags = ["/DEPENDENCY_FILE", "%{dependency_file}"],
+                        flags = ["-MD", "-MF", "%{dependency_file}"],
                         expand_if_available = "dependency_file",
                     ),
                 ],
@@ -1123,395 +1010,248 @@ def _impl(ctx):
         ],
     )
 
-    compiler_input_flags_feature = feature(
-        name = "compiler_input_flags",
+    dynamic_library_linker_tool_path = tool_paths
+    dynamic_library_linker_tool_feature = feature(
+        name = "dynamic_library_linker_tool",
         flag_sets = [
             flag_set(
                 actions = [
-                    _ASSEMBLE_ACTION_NAME,
-                    _PREPROCESS_ASSEMBLE_ACTION_NAME,
-                    _C_COMPILE_ACTION_NAME,
-                    _CPP_COMPILE_ACTION_NAME,
-                    _CPP_HEADER_PARSING_ACTION_NAME,
-                    _CPP_MODULE_COMPILE_ACTION_NAME,
-                    _CPP_MODULE_CODEGEN_ACTION_NAME,
+                    ACTION_NAMES.cpp_link_dynamic_library,
+                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+                    ACTION_NAMES.lto_index_for_dynamic_library,
+                    ACTION_NAMES.lto_index_for_nodeps_dynamic_library,
                 ],
                 flag_groups = [
                     flag_group(
-                        flags = ["/c", "%{source_file}"],
-                        expand_if_available = "source_file",
+                        flags = [" + cppLinkDynamicLibraryToolPath + "],
+                        expand_if_available = "generate_interface_library",
+                    ),
+                ],
+                with_features = [
+                    with_feature_set(
+                        features = ["supports_interface_shared_libraries"],
                     ),
                 ],
             ),
         ],
     )
 
-    fastbuild_feature = feature(name = "fastbuild")
+    output_execpath_flags_feature = feature(
+        name = "output_execpath_flags",
+        flag_sets = [
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = ["-o", "%{output_execpath}"],
+                        expand_if_available = "output_execpath",
+                    ),
+                ],
+            ),
+        ],
+    )
 
-    if (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64"):
+    # Note that we also set --coverage for c++-link-nodeps-dynamic-library. The
+    # generated code contains references to gcov symbols, and the dynamic linker
+    # can't resolve them unless the library is linked against gcov.
+    coverage_feature = feature(
+        name = "coverage",
+        provides = ["profile"],
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.preprocess_assemble,
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.cpp_header_parsing,
+                    ACTION_NAMES.cpp_module_compile,
+                ],
+                flag_groups = ([
+                    flag_group(flags = ctx.attr.coverage_compile_flags),
+                ] if ctx.attr.coverage_compile_flags else []),
+            ),
+            flag_set(
+                actions = all_link_actions + lto_index_actions,
+                flag_groups = ([
+                    flag_group(flags = ctx.attr.coverage_link_flags),
+                ] if ctx.attr.coverage_link_flags else []),
+            ),
+        ],
+    )
+
+    thinlto_feature = feature(
+        name = "thin_lto",
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                ] + all_link_actions + lto_index_actions,
+                flag_groups = [
+                    flag_group(flags = ["-flto=thin"]),
+                    flag_group(
+                        expand_if_available = "lto_indexing_bitcode_file",
+                        flags = [
+                            "-Xclang",
+                            "-fthin-link-bitcode=%{lto_indexing_bitcode_file}",
+                        ],
+                    ),
+                ],
+            ),
+            flag_set(
+                actions = [ACTION_NAMES.linkstamp_compile],
+                flag_groups = [flag_group(flags = ["-DBUILD_LTO_TYPE=thin"])],
+            ),
+            flag_set(
+                actions = lto_index_actions,
+                flag_groups = [
+                    flag_group(flags = [
+                        "-flto=thin",
+                        "-Wl,-plugin-opt,thinlto-index-only%{thinlto_optional_params_file}",
+                        "-Wl,-plugin-opt,thinlto-emit-imports-files",
+                        "-Wl,-plugin-opt,thinlto-prefix-replace=%{thinlto_prefix_replace}",
+                    ]),
+                    flag_group(
+                        expand_if_available = "thinlto_object_suffix_replace",
+                        flags = [
+                            "-Wl,-plugin-opt,thinlto-object-suffix-replace=%{thinlto_object_suffix_replace}",
+                        ],
+                    ),
+                    flag_group(
+                        expand_if_available = "thinlto_merged_object_file",
+                        flags = [
+                            "-Wl,-plugin-opt,obj-path=%{thinlto_merged_object_file}",
+                        ],
+                    ),
+                ],
+            ),
+            flag_set(
+                actions = [ACTION_NAMES.lto_backend],
+                flag_groups = [
+                    flag_group(flags = [
+                        "-c",
+                        "-fthinlto-index=%{thinlto_index}",
+                        "-o",
+                        "%{thinlto_output_object_file}",
+                        "-x",
+                        "ir",
+                        "%{thinlto_input_bitcode_file}",
+                    ]),
+                ],
+            ),
+        ],
+    )
+
+    is_linux = ctx.attr.target_libc != "macosx"
+
+    # TODO(#8303): Mac crosstool should also declare every feature.
+    if is_linux:
         features = [
-            default_compile_flags_feature,
-            default_link_flags_feature,
-            supports_dynamic_linker_feature,
-            objcopy_embed_flags_feature,
-        ]
-    elif (ctx.attr.cpu == "darwin"):
-        features = [
-            default_compile_flags_feature,
-            default_link_flags_feature,
-            supports_dynamic_linker_feature,
-            supports_pic_feature,
-            objcopy_embed_flags_feature,
-            dbg_feature,
-            opt_feature,
-            user_compile_flags_feature,
-            sysroot_feature,
-            unfiltered_compile_flags_feature,
-        ]
-    elif (ctx.attr.cpu == "freebsd" or
-          ctx.attr.cpu == "openbsd" or
-          ctx.attr.cpu == "local"):
-        features = [
-            default_compile_flags_feature,
-            default_link_flags_feature,
-            supports_dynamic_linker_feature,
-            supports_pic_feature,
-            objcopy_embed_flags_feature,
-            opt_feature,
-            dbg_feature,
-            user_compile_flags_feature,
-            sysroot_feature,
-            unfiltered_compile_flags_feature,
-        ]
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_clang" or
-          ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_mingw" or
-          ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64_mingw64"):
-        features = [
-            default_compile_flags_feature,
-            supports_dynamic_linker_feature,
-            objcopy_embed_flags_feature,
-        ]
-    elif (ctx.attr.cpu == "x64_windows_msvc"):
-        features = [
-            default_link_flags_feature,
-            random_seed_feature,
-            default_compile_flags_feature,
-            include_paths_feature,
             dependency_file_feature,
+            random_seed_feature,
+            pic_feature,
+            per_object_debug_info_feature,
+            preprocessor_defines_feature,
+            includes_feature,
+            include_paths_feature,
+            fdo_instrument_feature,
+            cs_fdo_instrument_feature,
+            cs_fdo_optimize_feature,
+            thinlto_feature,
+            fdo_prefetch_hints_feature,
+            autofdo_feature,
+            build_interface_libraries_feature,
+            dynamic_library_linker_tool_feature,
+            symbol_counts_feature,
+            shared_flag_feature,
+            linkstamps_feature,
+            output_execpath_flags_feature,
+            runtime_library_search_directories_feature,
+            library_search_directories_feature,
+            archiver_flags_feature,
+            force_pic_flags_feature,
+            fission_support_feature,
+            strip_debug_symbols_feature,
+            coverage_feature,
+            supports_pic_feature,
+        ] + (
+            [
+                supports_start_end_lib_feature,
+            ] if ctx.attr.supports_start_end_lib else []
+        ) + [
+            default_compile_flags_feature,
+            default_link_flags_feature,
+            libraries_to_link_feature,
+            user_link_flags_feature,
+            static_libgcc_feature,
+            fdo_optimize_feature,
+            supports_dynamic_linker_feature,
+            dbg_feature,
+            opt_feature,
             user_compile_flags_feature,
             sysroot_feature,
             unfiltered_compile_flags_feature,
-            compiler_output_flags_feature,
-            compiler_input_flags_feature,
+        ] + layering_check_features(ctx.attr.compiler)
+    else:
+        features = [
+            supports_pic_feature,
+        ] + (
+            [
+                supports_start_end_lib_feature,
+            ] if ctx.attr.supports_start_end_lib else []
+        ) + [
+            coverage_feature,
+            default_compile_flags_feature,
+            default_link_flags_feature,
+            fdo_optimize_feature,
+            supports_dynamic_linker_feature,
             dbg_feature,
-            fastbuild_feature,
             opt_feature,
-        ]
-    elif (ctx.attr.cpu == "armeabi-v7a"):
-        features = [supports_dynamic_linker_feature, supports_pic_feature]
+            user_compile_flags_feature,
+            sysroot_feature,
+            unfiltered_compile_flags_feature,
+        ] + layering_check_features(ctx.attr.compiler)
 
-    if (ctx.attr.cpu == "armeabi-v7a"):
-        cxx_builtin_include_directories = []
-    elif (ctx.attr.cpu == "darwin"):
-        cxx_builtin_include_directories = ["/"]
-    elif (ctx.attr.cpu == "freebsd" or
-          ctx.attr.cpu == "openbsd"):
-        cxx_builtin_include_directories = ["/usr/lib/clang", "/usr/local/include", "/usr/include"]
-    elif (ctx.attr.cpu == "local" or
-          ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_clang"):
-        cxx_builtin_include_directories = ["/usr/lib/gcc/", "/usr/local/include", "/usr/include"]
-    elif (ctx.attr.cpu == "x64_windows_msvc"):
-        cxx_builtin_include_directories = [
-            "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/INCLUDE",
-            "C:/Program Files (x86)/Windows Kits/10/include/",
-            "C:/Program Files (x86)/Windows Kits/8.1/include/",
-            "C:/Program Files (x86)/GnuWin32/include/",
-            "C:/python_27_amd64/files/include",
-        ]
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_mingw"):
-        cxx_builtin_include_directories = ["C:/mingw/include", "C:/mingw/lib/gcc"]
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64_mingw64"):
-        cxx_builtin_include_directories = ["C:/tools/msys64/mingw64/x86_64-w64-mingw32/include"]
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64"):
-        cxx_builtin_include_directories = ["C:/tools/msys64/", "/usr/"]
-    else:
-        fail("Unreachable")
-
-    artifact_name_patterns = []
-
-    make_variables = []
-
-    if (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64_mingw64"):
-        tool_paths = [
-            tool_path(
-                name = "ar",
-                path = "C:/tools/msys64/mingw64/bin/ar",
-            ),
-            tool_path(
-                name = "compat-ld",
-                path = "C:/tools/msys64/mingw64/bin/ld",
-            ),
-            tool_path(
-                name = "cpp",
-                path = "C:/tools/msys64/mingw64/bin/cpp",
-            ),
-            tool_path(
-                name = "dwp",
-                path = "C:/tools/msys64/mingw64/bin/dwp",
-            ),
-            tool_path(
-                name = "gcc",
-                path = "C:/tools/msys64/mingw64/bin/gcc",
-            ),
-            tool_path(
-                name = "gcov",
-                path = "C:/tools/msys64/mingw64/bin/gcov",
-            ),
-            tool_path(
-                name = "ld",
-                path = "C:/tools/msys64/mingw64/bin/ld",
-            ),
-            tool_path(
-                name = "nm",
-                path = "C:/tools/msys64/mingw64/bin/nm",
-            ),
-            tool_path(
-                name = "objcopy",
-                path = "C:/tools/msys64/mingw64/bin/objcopy",
-            ),
-            tool_path(
-                name = "objdump",
-                path = "C:/tools/msys64/mingw64/bin/objdump",
-            ),
-            tool_path(
-                name = "strip",
-                path = "C:/tools/msys64/mingw64/bin/strip",
-            ),
-        ]
-    elif (ctx.attr.cpu == "armeabi-v7a"):
-        tool_paths = [
-            tool_path(name = "ar", path = "/bin/false"),
-            tool_path(name = "compat-ld", path = "/bin/false"),
-            tool_path(name = "cpp", path = "/bin/false"),
-            tool_path(name = "dwp", path = "/bin/false"),
-            tool_path(name = "gcc", path = "/bin/false"),
-            tool_path(name = "gcov", path = "/bin/false"),
-            tool_path(name = "ld", path = "/bin/false"),
-            tool_path(name = "nm", path = "/bin/false"),
-            tool_path(name = "objcopy", path = "/bin/false"),
-            tool_path(name = "objdump", path = "/bin/false"),
-            tool_path(name = "strip", path = "/bin/false"),
-        ]
-    elif (ctx.attr.cpu == "freebsd"):
-        tool_paths = [
-            tool_path(name = "ar", path = "/usr/bin/ar"),
-            tool_path(name = "compat-ld", path = "/usr/bin/ld"),
-            tool_path(name = "cpp", path = "/usr/bin/cpp"),
-            tool_path(name = "dwp", path = "/usr/bin/dwp"),
-            tool_path(name = "gcc", path = "/usr/bin/clang"),
-            tool_path(name = "gcov", path = "/usr/bin/gcov"),
-            tool_path(name = "ld", path = "/usr/bin/ld"),
-            tool_path(name = "nm", path = "/usr/bin/nm"),
-            tool_path(name = "objcopy", path = "/usr/bin/objcopy"),
-            tool_path(name = "objdump", path = "/usr/bin/objdump"),
-            tool_path(name = "strip", path = "/usr/bin/strip"),
-        ]
-    elif (ctx.attr.cpu == "openbsd"):
-        tool_paths = [
-            tool_path(name = "ar", path = "/usr/bin/ar"),
-            tool_path(name = "compat-ld", path = "/usr/bin/ld"),
-            tool_path(name = "cpp", path = "/usr/bin/cpp"),
-            tool_path(name = "dwp", path = "/usr/bin/false"),
-            tool_path(name = "gcc", path = "/usr/bin/clang"),
-            tool_path(name = "gcov", path = "/usr/bin/gcov"),
-            tool_path(name = "ld", path = "/usr/bin/ld"),
-            tool_path(name = "nm", path = "/usr/bin/nm"),
-            tool_path(name = "objcopy", path = "/usr/bin/objcopy"),
-            tool_path(name = "objdump", path = "/usr/bin/objdump"),
-            tool_path(name = "strip", path = "/usr/bin/strip"),
-        ]
-    elif (ctx.attr.cpu == "local"):
-        tool_paths = [
-            tool_path(name = "ar", path = "/usr/bin/ar"),
-            tool_path(name = "compat-ld", path = "/usr/bin/ld"),
-            tool_path(name = "cpp", path = "/usr/bin/cpp"),
-            tool_path(name = "dwp", path = "/usr/bin/dwp"),
-            tool_path(name = "gcc", path = "/usr/bin/gcc"),
-            tool_path(name = "gcov", path = "/usr/bin/gcov"),
-            tool_path(name = "ld", path = "/usr/bin/ld"),
-            tool_path(name = "nm", path = "/usr/bin/nm"),
-            tool_path(name = "objcopy", path = "/usr/bin/objcopy"),
-            tool_path(name = "objdump", path = "/usr/bin/objdump"),
-            tool_path(name = "strip", path = "/usr/bin/strip"),
-        ]
-    elif (ctx.attr.cpu == "darwin"):
-        tool_paths = [
-            tool_path(name = "ar", path = "/usr/bin/libtool"),
-            tool_path(name = "compat-ld", path = "/usr/bin/ld"),
-            tool_path(name = "cpp", path = "/usr/bin/cpp"),
-            tool_path(name = "dwp", path = "/usr/bin/dwp"),
-            tool_path(name = "gcc", path = "osx_cc_wrapper.sh"),
-            tool_path(name = "gcov", path = "/usr/bin/gcov"),
-            tool_path(name = "ld", path = "/usr/bin/ld"),
-            tool_path(name = "nm", path = "/usr/bin/nm"),
-            tool_path(name = "objcopy", path = "/usr/bin/objcopy"),
-            tool_path(name = "objdump", path = "/usr/bin/objdump"),
-            tool_path(name = "strip", path = "/usr/bin/strip"),
-        ]
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_clang"):
-        tool_paths = [
-            tool_path(name = "ar", path = "C:/mingw/bin/ar"),
-            tool_path(
-                name = "compat-ld",
-                path = "C:/Program Files (x86)/LLVM/bin/ld",
-            ),
-            tool_path(
-                name = "cpp",
-                path = "C:/Program Files (x86)/LLVM/bin/cpp",
-            ),
-            tool_path(
-                name = "dwp",
-                path = "C:/Program Files (x86)/LLVM/bin/dwp",
-            ),
-            tool_path(
-                name = "gcc",
-                path = "C:/Program Files (x86)/LLVM/bin/clang",
-            ),
-            tool_path(
-                name = "gcov",
-                path = "C:/Program Files (x86)/LLVM/bin/gcov",
-            ),
-            tool_path(
-                name = "ld",
-                path = "C:/Program Files (x86)/LLVM/bin/ld",
-            ),
-            tool_path(
-                name = "nm",
-                path = "C:/Program Files (x86)/LLVM/bin/nm",
-            ),
-            tool_path(
-                name = "objcopy",
-                path = "C:/Program Files (x86)/LLVM/bin/objcopy",
-            ),
-            tool_path(
-                name = "objdump",
-                path = "C:/Program Files (x86)/LLVM/bin/objdump",
-            ),
-            tool_path(
-                name = "strip",
-                path = "C:/Program Files (x86)/LLVM/bin/strip",
-            ),
-        ]
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_mingw"):
-        tool_paths = [
-            tool_path(name = "ar", path = "C:/mingw/bin/ar"),
-            tool_path(name = "compat-ld", path = "C:/mingw/bin/ld"),
-            tool_path(name = "cpp", path = "C:/mingw/bin/cpp"),
-            tool_path(name = "dwp", path = "C:/mingw/bin/dwp"),
-            tool_path(name = "gcc", path = "C:/mingw/bin/gcc"),
-            tool_path(name = "gcov", path = "C:/mingw/bin/gcov"),
-            tool_path(name = "ld", path = "C:/mingw/bin/ld"),
-            tool_path(name = "nm", path = "C:/mingw/bin/nm"),
-            tool_path(name = "objcopy", path = "C:/mingw/bin/objcopy"),
-            tool_path(name = "objdump", path = "C:/mingw/bin/objdump"),
-            tool_path(name = "strip", path = "C:/mingw/bin/strip"),
-        ]
-    elif (ctx.attr.cpu == "x64_windows" and ctx.attr.compiler == "windows_msys64"):
-        tool_paths = [
-            tool_path(name = "ar", path = "C:/tools/msys64/usr/bin/ar"),
-            tool_path(
-                name = "compat-ld",
-                path = "C:/tools/msys64/usr/bin/ld",
-            ),
-            tool_path(
-                name = "cpp",
-                path = "C:/tools/msys64/usr/bin/cpp",
-            ),
-            tool_path(
-                name = "dwp",
-                path = "C:/tools/msys64/usr/bin/dwp",
-            ),
-            tool_path(
-                name = "gcc",
-                path = "C:/tools/msys64/usr/bin/gcc",
-            ),
-            tool_path(
-                name = "gcov",
-                path = "C:/tools/msys64/usr/bin/gcov",
-            ),
-            tool_path(name = "ld", path = "C:/tools/msys64/usr/bin/ld"),
-            tool_path(name = "nm", path = "C:/tools/msys64/usr/bin/nm"),
-            tool_path(
-                name = "objcopy",
-                path = "C:/tools/msys64/usr/bin/objcopy",
-            ),
-            tool_path(
-                name = "objdump",
-                path = "C:/tools/msys64/usr/bin/objdump",
-            ),
-            tool_path(
-                name = "strip",
-                path = "C:/tools/msys64/usr/bin/strip",
-            ),
-        ]
-    elif (ctx.attr.cpu == "x64_windows_msvc"):
-        tool_paths = [
-            tool_path(name = "ar", path = "wrapper/bin/msvc_link.bat"),
-            tool_path(name = "cpp", path = "wrapper/bin/msvc_cl.bat"),
-            tool_path(name = "gcc", path = "wrapper/bin/msvc_cl.bat"),
-            tool_path(name = "gcov", path = "wrapper/bin/msvc_nop.bat"),
-            tool_path(name = "ld", path = "wrapper/bin/msvc_link.bat"),
-            tool_path(name = "nm", path = "wrapper/bin/msvc_nop.bat"),
-            tool_path(
-                name = "objcopy",
-                path = "wrapper/bin/msvc_nop.bat",
-            ),
-            tool_path(
-                name = "objdump",
-                path = "wrapper/bin/msvc_nop.bat",
-            ),
-            tool_path(
-                name = "strip",
-                path = "wrapper/bin/msvc_nop.bat",
-            ),
-        ]
-    else:
-        fail("Unreachable")
-
-    out = ctx.actions.declare_file(ctx.label.name)
-    ctx.actions.write(out, "Fake executable")
-    return [
-        cc_common.create_cc_toolchain_config_info(
-            ctx = ctx,
-            features = features,
-            action_configs = action_configs,
-            artifact_name_patterns = artifact_name_patterns,
-            cxx_builtin_include_directories = cxx_builtin_include_directories,
-            toolchain_identifier = toolchain_identifier,
-            host_system_name = host_system_name,
-            target_system_name = target_system_name,
-            target_cpu = target_cpu,
-            target_libc = target_libc,
-            compiler = compiler,
-            abi_version = abi_version,
-            abi_libc_version = abi_libc_version,
-            tool_paths = tool_paths,
-            make_variables = make_variables,
-            builtin_sysroot = builtin_sysroot,
-            cc_target_os = cc_target_os,
-        ),
-        DefaultInfo(
-            executable = out,
-        ),
-    ]
+    return cc_common.create_cc_toolchain_config_info(
+        ctx = ctx,
+        features = features,
+        action_configs = action_configs,
+        cxx_builtin_include_directories = ctx.attr.cxx_builtin_include_directories,
+        toolchain_identifier = ctx.attr.toolchain_identifier,
+        host_system_name = ctx.attr.host_system_name,
+        target_system_name = ctx.attr.target_system_name,
+        target_cpu = ctx.attr.cpu,
+        target_libc = ctx.attr.target_libc,
+        compiler = ctx.attr.compiler,
+        abi_version = ctx.attr.abi_version,
+        abi_libc_version = ctx.attr.abi_libc_version,
+        tool_paths = tool_paths,
+    )
 
 cc_toolchain_config = rule(
     implementation = _impl,
     attrs = {
+        "abi_libc_version": attr.string(mandatory = True),
+        "abi_version": attr.string(mandatory = True),
+        "compile_flags": attr.string_list(),
+        "compiler": attr.string(mandatory = True),
+        "coverage_compile_flags": attr.string_list(),
+        "coverage_link_flags": attr.string_list(),
         "cpu": attr.string(mandatory = True),
-        "compiler": attr.string(),
-        "disable_static_cc_toolchains": attr.bool(),
+        "cxx_builtin_include_directories": attr.string_list(),
+        "cxx_flags": attr.string_list(),
+        "dbg_compile_flags": attr.string_list(),
+        "host_system_name": attr.string(mandatory = True),
+        "link_flags": attr.string_list(),
+        "link_libs": attr.string_list(),
+        "opt_compile_flags": attr.string_list(),
+        "opt_link_flags": attr.string_list(),
+        "supports_start_end_lib": attr.bool(),
+        "target_libc": attr.string(mandatory = True),
+        "target_system_name": attr.string(mandatory = True),
+        "tool_paths": attr.string_dict(),
+        "toolchain_identifier": attr.string(mandatory = True),
+        "unfiltered_compile_flags": attr.string_list(),
     },
     provides = [CcToolchainConfigInfo],
-    executable = True,
 )
