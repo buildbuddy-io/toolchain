@@ -21,6 +21,10 @@ platform(
            name: "OSFamily"
            value:  "Linux"
         }
+        properties {
+           name: "container-image"
+           value:  "%{default_docker_image}"
+        }
         """,
 )
 

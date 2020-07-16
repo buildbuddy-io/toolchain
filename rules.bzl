@@ -26,6 +26,7 @@ def _buildbuddy_toolchain_impl(rctx):
         "%{darwin_additional_cxx_builtin_include_directories}": "",
         "%{default_cc_toolchain_suite}": "llvm_cc_toolchain_suite" if rctx.attr.llvm else "ubuntu1604_cc_toolchain_suite",
         "%{default_cc_toolchain}": "llvm_cc_toolchain" if rctx.attr.llvm else "ubuntu1604_cc_toolchain",
+        "%{default_docker_image}": rctx.attr.docker_image,
     }
 
     rctx.template(
@@ -85,12 +86,13 @@ def buildbuddy_cc_toolchain(name):
 buildbuddy_toolchain = repository_rule(
     attrs = {
         "llvm": attr.bool(),
+        "docker_image": attr.string(),
     },
     local = False,
     implementation = _buildbuddy_toolchain_impl,
 )
 
-def register_buildbuddy_toolchain(name, llvm = False):
+def register_buildbuddy_toolchain(name, llvm = False, docker_image = "none"):
     if not native.existing_rule("rules_cc"):
         http_archive(
             name = "rules_cc",
