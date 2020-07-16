@@ -92,7 +92,7 @@ buildbuddy_toolchain = repository_rule(
     implementation = _buildbuddy_toolchain_impl,
 )
 
-def register_buildbuddy_toolchain(name, llvm = False, docker_image = "none"):
+def register_buildbuddy_toolchain(name, llvm = True, docker_image = "none"):
     if not native.existing_rule("rules_cc"):
         http_archive(
             name = "rules_cc",
