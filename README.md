@@ -1,6 +1,6 @@
 # BuildBuddy RBE Toolchain
 
-Currently supports Linux C/C++ builds (including CGO) on Ubuntu 16.04.
+Currently supports Linux C/C++ (including CGO) & Java builds on Ubuntu 16.04.
 
 ## Usage instructions
 
