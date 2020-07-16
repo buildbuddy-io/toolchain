@@ -80,14 +80,14 @@ toolchain(
         "@bazel_tools//platforms:linux",
         "@bazel_tools//platforms:x86_64",
     ],
-    toolchain = ":ubuntu1604_cc_toolchain",
+    toolchain = ":ubuntu1604_local_cc_toolchain",
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )
 
 cc_toolchain(
-    name = "ubuntu1604_cc_toolchain",
+    name = "ubuntu1604_local_cc_toolchain",
     toolchain_identifier = "local",
-    toolchain_config = ":local",
+    toolchain_config = ":ubuntu1604_cc_toolchain_config",
     all_files = ":compiler_deps",
     ar_files = ":compiler_deps",
     as_files = ":compiler_deps",
@@ -182,7 +182,7 @@ toolchain(
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    toolchain = ":llvm_clang_toolchain",
+    toolchain = ":llvm_buildbuddy_cc_toolchain",
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )
 
@@ -196,7 +196,7 @@ llvm_cc_toolchain_config(
 
 load("@io_buildbuddy_toolchain//:rules.bzl", "buildbuddy_cc_toolchain")
 
-buildbuddy_cc_toolchain("llvm_clang_toolchain")
+buildbuddy_cc_toolchain("llvm_buildbuddy_cc_toolchain")
 
 filegroup(
     name = "clang",
