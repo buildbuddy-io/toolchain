@@ -69,6 +69,8 @@ cc_toolchain(
     supports_param_files = 1,
 )
 
+load(":cc_toolchain_config.bzl", "cc_toolchain_config")
+
 cc_toolchain_config(
     name = "local",
     cpu = "k8",
