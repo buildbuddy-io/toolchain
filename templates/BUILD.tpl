@@ -17,10 +17,6 @@ platform(
         "@bazel_tools//tools/cpp:clang",
     ],
     remote_execution_properties = """
-        properties: {
-          name: "container-image"
-          value:"docker://gcr.io/bazel-public/ubuntu1604-bazel-java8@sha256:bf084dba7794ed682dba1fdecfa7c9f924fdd7f42d35f2618826919162287629"
-        }
         properties {
            name: "OSFamily"
            value:  "Linux"
