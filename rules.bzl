@@ -76,8 +76,10 @@ def buildbuddy_cc_toolchain(name):
     )
 
 buildbuddy_toolchain = repository_rule(
-    attrs = {},
-    llvm = False,
+    attrs = {
+        "llvm": attr.bool(),
+    },
+    local = False,
     implementation = _buildbuddy_toolchain_impl,
 )
 
