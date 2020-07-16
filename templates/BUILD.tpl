@@ -46,10 +46,31 @@ default_java_toolchain(
     target_version = "8",
 )
 
+## Defaults
+
+alias(
+    name = "toolchain", 
+    actual=":%{default_cc_toolchain_suite}"
+)
+
+alias(
+    name = "cc_toolchain", 
+    actual=":"%{default_cc_toolchain}"
+)
+
+
 ## CC
 
+cc_toolchain_suite(
+    name = "ubuntu1604_cc_toolchain_suite",
+    toolchains = {
+        "k8|compiler": ":ubuntu1604_cc_toolchain",
+        "k8": ":ubuntu1604_cc_toolchain",
+    },
+)
+
 toolchain(
-    name = "cc-toolchain",
+    name = "ubuntu1604_cc_toolchain",
     exec_compatible_with = [
         "@bazel_tools//platforms:x86_64",
         "@bazel_tools//platforms:linux",
@@ -59,20 +80,12 @@ toolchain(
         "@bazel_tools//platforms:linux",
         "@bazel_tools//platforms:x86_64",
     ],
-    toolchain = ":cc-compiler-k8",
+    toolchain = ":ubuntu1604_cc_compiler_k8",
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )
 
-cc_toolchain_suite(
-    name = "toolchain",
-    toolchains = {
-        "k8|compiler": ":cc-compiler-k8",
-        "k8": ":cc-compiler-k8",
-    },
-)
-
 cc_toolchain(
-    name = "cc-compiler-k8",
+    name = "ubuntu1604_cc_toolchain",
     toolchain_identifier = "local",
     toolchain_config = ":local",
     all_files = ":compiler_deps",
@@ -89,7 +102,7 @@ cc_toolchain(
 load(":cc_toolchain_config.bzl", "cc_toolchain_config")
 
 cc_toolchain_config(
-    name = "local",
+    name = "ubuntu1604_cc_toolchain_config",
     cpu = "k8",
     compiler = "compiler",
     toolchain_identifier = "local",
@@ -152,15 +165,15 @@ cc_toolchain_config(
 ## LLVM toolchain
 
 cc_toolchain_suite(
-    name = "llvm_toolchain",
+    name = "llvm_cc_toolchain_suite",
     toolchains = {
-        "k8|clang": ":cc-clang-linux",
-        "k8": ":cc-clang-linux",
+        "k8|clang": ":llvm_clang_toolchain",
+        "k8": ":llvm_clang_toolchain",
     },
 )
 
 toolchain(
-    name = "llvm-cc-toolchain-linux",
+    name = "llvm_cc_toolchain",
     exec_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
@@ -169,7 +182,7 @@ toolchain(
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    toolchain = ":cc-clang-linux",
+    toolchain = ":llvm_clang_toolchain",
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )
 
@@ -177,13 +190,13 @@ toolchain(
 load(":llvm_cc_toolchain_config.bzl", "llvm_cc_toolchain_config")
 
 llvm_cc_toolchain_config(
-    name = "local_linux",
+    name = "llvm_cc_toolchain_config",
     cpu = "k8",
 )
 
 load("@io_buildbuddy_toolchain//:rules.bzl", "buildbuddy_cc_toolchain")
 
-buildbuddy_cc_toolchain("cc-clang-linux")
+buildbuddy_cc_toolchain("llvm_clang_toolchain")
 
 filegroup(
     name = "clang",
