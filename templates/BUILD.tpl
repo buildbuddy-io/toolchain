@@ -173,6 +173,14 @@ toolchain(
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )
 
+
+load(":llvm_cc_toolchain_config.bzl", "llvm_cc_toolchain_config")
+
+llvm_cc_toolchain_config(
+    name = "local_linux",
+    cpu = "k8",
+)
+
 load("@io_buildbuddy_toolchain//:rules.bzl", "buildbuddy_cc_toolchain")
 
 buildbuddy_cc_toolchain("cc-clang-linux")
