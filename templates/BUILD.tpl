@@ -55,7 +55,7 @@ alias(
 
 alias(
     name = "cc_toolchain", 
-    actual=":"%{default_cc_toolchain}"
+    actual=":%{default_cc_toolchain}"
 )
 
 
