@@ -79,7 +79,7 @@ def buildbuddy_cc_toolchain(name):
         objcopy_files = ":objcopy",
         strip_files = ":empty",
         supports_param_files = 1,
-        toolchain_config = "local_linux",
+        toolchain_config = "llvm_cc_toolchain_config",
     )
 
 buildbuddy_toolchain = repository_rule(
