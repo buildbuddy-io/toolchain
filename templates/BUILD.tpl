@@ -80,7 +80,7 @@ toolchain(
         "@bazel_tools//platforms:linux",
         "@bazel_tools//platforms:x86_64",
     ],
-    toolchain = ":ubuntu1604_cc_compiler_k8",
+    toolchain = ":ubuntu1604_cc_toolchain",
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )
 
