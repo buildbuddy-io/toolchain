@@ -32,6 +32,11 @@ def _buildbuddy_toolchain_impl(rctx):
         substitutions,
     )
     rctx.template(
+        "llvm_cc_toolchain_config.bzl",
+        Label("//templates:llvm_cc_toolchain_config.bzl.tpl"),
+        substitutions,
+    )
+    rctx.template(
         "bin/cc_wrapper.sh",  # Co-located with the linker to help rules_go.
         Label("//templates:cc_wrapper.sh.tpl"),
         substitutions,
