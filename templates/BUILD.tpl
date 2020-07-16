@@ -167,8 +167,8 @@ cc_toolchain_config(
 cc_toolchain_suite(
     name = "llvm_cc_toolchain_suite",
     toolchains = {
-        "k8|clang": ":llvm_clang_toolchain",
-        "k8": ":llvm_clang_toolchain",
+        "k8|clang": ":llvm_buildbuddy_cc_toolchain",
+        "k8": ":llvm_buildbuddy_cc_toolchain",
     },
 )
 
