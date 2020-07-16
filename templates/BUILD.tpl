@@ -7,6 +7,27 @@ exports_files(["Makevars"])
 # Some targets may need to directly depend on these files.
 exports_files(glob(["bin/*", "lib/*"]))
 
+# Platform
+
+platform(
+    name = "platform",
+    constraint_values = [
+        "@bazel_tools//platforms:x86_64",
+        "@bazel_tools//platforms:linux",
+        "@bazel_tools//tools/cpp:clang",
+    ],
+    remote_execution_properties = """
+        properties: {
+          name: "container-image"
+          value:"docker://gcr.io/bazel-public/ubuntu1604-bazel-java8@sha256:bf084dba7794ed682dba1fdecfa7c9f924fdd7f42d35f2618826919162287629"
+        }
+        properties {
+           name: "OSFamily"
+           value:  "Linux"
+        }
+        """,
+)
+
 ## Java 8
 
 java_runtime(
@@ -36,7 +57,7 @@ toolchain(
     exec_compatible_with = [
         "@bazel_tools//platforms:x86_64",
         "@bazel_tools//platforms:linux",
-#        "@bazel_tools//tools/cpp:clang",
+        "@bazel_tools//tools/cpp:clang",
     ],
     target_compatible_with = [
         "@bazel_tools//platforms:linux",
