@@ -6,6 +6,26 @@ exports_files(["Makevars"])
 
 # Some targets may need to directly depend on these files.
 exports_files(glob(["bin/*", "lib/*"]))
+  
+java_runtime(
+    name = "javabase_jdk8",
+    srcs = [],
+    java_home = "/usr/lib/jvm/java-8-openjdk-amd64",
+)
+
+load(
+    "@bazel_tools//tools/jdk:default_java_toolchain.bzl",
+    "JDK8_JVM_OPTS",
+    "default_java_toolchain",
+    "java_runtime_files",
+)
+
+default_java_toolchain(
+    name = "toolchain_jdk8",
+    jvm_opts = JDK8_JVM_OPTS,
+    source_version = "8",
+    target_version = "8",
+)
 
 filegroup(
     name = "empty",
