@@ -101,4 +101,4 @@ def register_buildbuddy_toolchain(name, llvm = True, docker_image = "none"):
             urls = ["https://github.com/bazelbuild/rules_cc/archive/726dd8157557f1456b3656e26ab21a1646653405.tar.gz"],
         )
 
-    buildbuddy_toolchain(name = name, llvm = llvm)
+    buildbuddy_toolchain(name = name, llvm = llvm, docker_image = docker_image)

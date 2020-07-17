@@ -23,7 +23,7 @@ platform(
         }
         properties {
            name: "container-image"
-           value:  "%{default_docker_image}"
+           value: "%{default_docker_image}"
         }
         """,
 )
