@@ -12,21 +12,25 @@ http_archive(
     urls = ["https://github.com/buildbuddy-io/toolchain/archive/master.tar.gz"],
 )
 
-load("@io_buildbuddy_toolchain//:rules.bzl", "register_buildbuddy_toolchain")
+load("@io_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
 
-register_buildbuddy_toolchain(name = "bb")
+buildbuddy_deps()
+
+load("@io_buildbuddy_toolchain//:rules.bzl", "buildbuddy")
+
+buildbuddy(name = "buildbuddy_toolchain")
 ```
 
 Now you can use the toolchain in your BuildBuddy RBE builds. For example:
 ```
-bazel build server --remote_executor=cloud.buildbuddy.io --crosstool_top=@bb//:toolchain
+bazel build server --remote_executor=cloud.buildbuddy.io --crosstool_top=@buildbuddy_toolchain//:toolchain
 ```
 
 If you need Java 8 support, you just need to add a few more flags:
 ```
---javabase=@bb//:javabase_jdk8
---host_javabase=@bb//:javabase_jdk8
---java_toolchain=@bb//:toolchain_jdk8
+--javabase=@buildbuddy_toolchain//:javabase_jdk8
+--host_javabase=@buildbuddy_toolchain//:javabase_jdk8
+--java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
 ```
 
 ## Coming soon
