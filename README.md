@@ -8,8 +8,9 @@ Add the following lines to your `WORKSPACE` file. You'll probably want to pin yo
 ```
 http_archive(
     name = "io_buildbuddy_toolchain",
-    strip_prefix = "toolchain-master",
-    urls = ["https://github.com/buildbuddy-io/toolchain/archive/master.tar.gz"],
+    sha256 = "e355df3eb5e487242d7daf6d9ed6ae0a6ce63df4195dd5471d9ebd70079a9e79",
+    strip_prefix = "toolchain-c4be88ea84bdf3bcc067dc59a8640da5cb00632e",
+    urls = ["https://github.com/buildbuddy-io/toolchain/archive/c4be88ea84bdf3bcc067dc59a8640da5cb00632e.tar.gz"],
 )
 
 load("@io_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
